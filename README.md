@@ -1,4 +1,4 @@
-# L-shaped-method
+# An   Implementation   of   the   L-shaped   Method   using   the   Two-Phase-Simplex-Algorithm
 Implementation of an algorithm for two-stage stochastic linear programs with fixed recourse according to van Slyke and Wets [1].
 
 ### Information
