@@ -10,17 +10,24 @@ import numpy as np
 from pysmps import smps_loader as smps
 
 ###############################################################################
+# LandS ORINGINAL
+###############################################################################
+
+electric = Stoch_LP.from_smps("path\\to\\electric\\LandS\\set")
+electric.solve()
+
+###############################################################################
 # LandS MODIFICATION
 ###############################################################################
 
-LandS = smps.load_2stage_problem("path/to/LandS/set")
+LandS = smps.load_2stage_problem("path\\to\\electric\\LandS\\set")
 
 h = []
 p = []
 
 begin = 0
 end = 4
-N = 50
+N = 5
 for i in range(N):
     for j in range(N):
         for k in range(N):

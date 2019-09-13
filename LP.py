@@ -10,7 +10,7 @@ restrictions are given as 0 <= x < +inf.
 
 import numpy as np
 
-from Exceptions import InfeasibleProblem
+from Exceptions import InfeasibleProblem, NoPivotException
 
 class LP:
     """
@@ -64,7 +64,7 @@ class LP:
             
     """
     
-    DEBUG = False
+    DEBUG = True
     
     def __init__(self, c, A_eq = None, b_eq = None,
                  A_geq = None, b_geq = None, calculate_multipliers = False, eps
@@ -97,7 +97,7 @@ class LP:
         return {"x": self.solution, "bounded": not type(self.solution) is dict}
     
     def solve(self):
-        #local function
+        # local function
         def base_vector(i, dim):
             v = np.zeros(dim)
             v[i] = 1
@@ -126,8 +126,8 @@ class LP:
                     A_eq,
                     A_geq
                     ), axis=0)
-        swapped = [] # list of indices of equality constraints whose rhs were < 0
-        # these are used for calculating the signs of the multipliers
+        swapped = [] # list of indices of equality constraints whose rhs values 
+        # were negative; these are used for calculating the signs of the multipliers
         a = 0 # number of artificial variables inserted for geq constraints
         # insert artificial variables if there are no geq constraints        
         if A_geq.shape[1] == 0:
@@ -227,7 +227,7 @@ class LP:
             print(tableau.shape[1])
             print(c.shape)
             print(m+a+1)
-        tableau = np.concatenate(( #append actual objective function to tableau
+        tableau = np.concatenate((# append actual objective function to tableau
             tableau,
             np.concatenate((
                 np.matrix(c),
@@ -235,7 +235,7 @@ class LP:
             ), axis=1)
         ), axis = 0)
             
-        tableau = np.concatenate(( #append objective function of artificial var
+        tableau = np.concatenate((# append auxiliary objective function to tabl
             tableau,
             np.concatenate((
                 c_curr,
@@ -269,17 +269,22 @@ class LP:
             if LP.DEBUG:
                 print("Entering phase", phase, "with parameters:\n",
                       {"n": n, "m": m, "rows": rows, "a": a})
+            bland = False
+            degenerated = 0
             # while there is a negative coefficient in c_curr    
             while np.shape(c_curr[:,N][c_curr[:,N] < - self.eps])[1] > 0: 
-                # TODO: CHECK IF CYCLUS
-                
+                z = tableau[rows + 2 - phase, n + m + a] # for checking cycle
                 if LP.DEBUG:
                     print("Initial Tableau:")
                     print(tableau)
                 
-                index = np.argmin(c_curr[:,N]) # Eintretende Variable
-                i = N[index]
-                col = tableau[0:rows,i] # i-te spalte ohne c value
+                if bland:
+                    index = np.argmax(c_curr[:,N] < - self.eps)
+                    i = N[index]
+                else:
+                    index = np.argmin(c_curr[:,N]) # entering variable
+                    i = N[index]
+                col = tableau[0:rows,i] # i-th column without c value
                 if LP.DEBUG:
                     print("Entering Variable:", i)
                     print("Index in non-basic Variable set:", index)
@@ -291,7 +296,7 @@ class LP:
                     print("Quotients:", tableau[0:rows,-1][pos,:] / col[pos,:])
                 if len(pos) == 0:
                     raise NoPivotException(B, N, tableau, i, col)
-                j = pos[np.argmin(tableau[0:rows,-1][pos,:] / col[pos,:])] # Austretende Variable
+                j = pos[np.argmin(tableau[0:rows,-1][pos,:] / col[pos,:])] # leaving variable
                 if LP.DEBUG:
                     print("Leaving Variable:", B[j])
                     print("Index in basic variable set:", j)
@@ -308,6 +313,12 @@ class LP:
                 if LP.DEBUG:
                     print("Updated basis:", B)
                     print("Updated non-basis:", N)
+                if abs(z - tableau[rows + 2 - phase, n + m + a]) < self.eps: # checking cycle
+                    degenerated = degenerated + 1
+                    if degenerated >= 10:
+                        bland = True
+                        if LP.DEBUG:
+                            print("Caught in cycle; using BLANDS RULE now.")
                 c_curr = tableau[rows + 2 - phase, 0:(n + m + a)]
                 if LP.DEBUG:
                     print("Next c:", c_curr)
@@ -353,13 +364,9 @@ class LP:
                 raise Exception("Phase 1 exited without a feasible solution! Exiting.")
             print(B, N)
             print(tableau)
-                    
-            # React
         elif len(AnB) > 1:
             raise Exception("There are multiple artificial variables in the basis variables.")
-            # React
-        # else:
-        
+           
         # PHASE 2:
         tableau = tableau[0:(m + 1),:]
         # slice out artificial variable columns:
@@ -402,11 +409,3 @@ class LP:
             print("Solution:", self.solution.T)
             print("Optimal Value:", self.optimal_value)
             
-class NoPivotException(Exception):
-    def __init__(self, B, N, tableau, i, col):
-        self.B = B
-        self.N = N
-        self.tableau = tableau
-        self.i = i
-        self.col = col
-    pass

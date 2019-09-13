@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Tue Aug  6 13:43:48 2019
-This is an implementation of a two stage stochastic linear program with fixed 
+This is an implementation of a two-stage stochastic linear program with fixed 
 recourse solvable due to the van Slyke and Wets algorithm. 
 
 @author: Ina
@@ -17,6 +17,106 @@ from LP import LP
     
 class Stoch_LP(LP):
     
+    """
+    An instance of Stoch_LP offers the following:
+        - Inheritance: inherits from LP and conceived as instance of class LP 
+            this resembles the subordinated problem
+        - Fields:
+            n (numeric): Number of first-stage variables
+            c (np.array): Vector of coefficients of the first-stage objective 
+                function corresponding to the first-stage variables 
+                (deterministic)
+            A (np.matrix): The matrix of first-stage constraints (row-wise, 
+                deterministic, only equality constraints)
+            b (np.array): The vector of (deterministic) rhs values of the 
+                first-stage constraints
+            q (list of np.arrays): A list of vectors of coefficients of the 
+                second-stage objective function (stochastic)
+            h (list of np.arrays): A list of vectors of (stochastic) rhs values
+                of the second-stage constraints
+            T (list of np.matrices): A list of matricies of second-stage 
+                constraints corresponding to the first-stage variables 
+                (row-wise, stochastic 
+            W (np.matrix): The fixed recourse matrix; matrix of second-stage 
+                constraints corresponding to the second-stage variables 
+                (row-wise, deterministic, (T W) matrix of second-stage equality
+                constraints)
+            p (list of numerical values): The list with probabilities of each
+                scenario
+            K (numeric): Number of scenarios
+            
+            DEBUG (static, final, bool): If true we print the added constraints 
+                and other information to current steps in the algorithm.
+        - Functions:
+            from_smps:
+                - Arguments:
+                    path to SMPS file directory ending with basic file name
+                    eps
+                - Result:
+                    Returns an instance of Stoch_LP with the data of the SMPS 
+                    files
+            __add_constraint_sigma:
+                - Arguments:
+                    self
+                    D is a vector with coefficients for the added constraint of
+                      type sigma 
+                    d is the rhs value for the added constraint of type sigma
+                - Result:
+                    Adds a constraint of type sigma to the subordinated problem
+             __add_constraint_pi:
+                 - Arguments: 
+                    self 
+                    E is a vector with coefficients for the added constraint of 
+                      type pi
+                    e is the rhs value for the added constraint of type pi
+                 - Result:
+                    Adds a constraint of type pi to the subordinated problem
+            __is_second_stage_problem_feasible:
+                 - Arguments:
+                     self 
+                     x is the current first-stage solution
+                     NB is a matrix of equality constraints; it is always the 
+                         matrix (W I -I), where W is the recourse matrix and 
+                         I is the identity matrix
+                     is_constraint_shifted is a boolean value which specifies 
+                         if rhs is 'h-Tx' (True) or '-Tx' (False). 
+                  - Result: 
+                      returns multipliers sigma and the index of the 
+                      first for which the second-stage problem is unfeasible
+                      if the second-stage problem is feasible for all 
+                      scenarios, it returns None and -1.
+                  - Calls and Exceptions: 
+                      solve()
+            __solve_second_stage_problem:
+                  - Arguments: 
+                      self
+                      x is the current first-stage solution
+                      k is an index of the current scenario
+                      is_constraint_shifted is a boolean value which specifies 
+                         if rhs is 'h-Tx' (True) or '-Tx' (False).
+                  - Result: 
+                      if second-stage problem is bounded, returns optimal 
+                      value, optimal solution, optimal multipliers
+                  - Calls and Exceptions:
+                      get_solution()
+                      UnboundedProblem: if second-stage problem is unbounded
+            solve:
+                  - Arguments:
+                      self
+                  - Result: 
+                      if solvable, returns optimal first- and second-stage 
+                      solutions, optimal value, number of added constraints of 
+                      type sigma and pi respectively
+                  - Calls and Exceptions: 
+                      super().solve()
+                      super().get_solution()
+                      __is_second_stage_problem_feasible
+                      __solve_second_stage_problem
+                      __add_constraint_sigma
+                      __add_constraint_pi
+    """
+    
+   
     DEBUG = False
     
     def __init__(self, c, A, b, q, h, T, W, p, eps = 1e-8):
@@ -170,12 +270,11 @@ class Stoch_LP(LP):
                     sigma_d, k_d = self.__is_second_stage_problem_feasible(x["d"], WII, bounded)
                     if Stoch_LP.DEBUG:
                         print({"sigma_d": sigma_d, "k_d": k_d})
-                    if k_d < 0: #dann alle w' = 0
+                    if k_d < 0: # then all w' = 0
                         sigma_p, k_p = self.__is_second_stage_problem_feasible(x["p"], WII, True)
                         if Stoch_LP.DEBUG:
                             print({"sigma_p": sigma_p, "k_p": k_p})
-                        if k_p < 0: #dann alle w = 0
-                            # gehe zu 6.2.3. 
+                        if k_p < 0: # then all w = 0
                             E = np.zeros((1, len(self.c)-1))
                             e = 0
                             direction = np.matrix(self.c).dot(x["d"])
@@ -184,20 +283,20 @@ class Stoch_LP(LP):
                                 E = E + self.p[k] * pi_curr.T.dot(self.T[k])
                                 e = e + self.p[k] * pi_curr.T.dot(self.h[k])
                                 direction += self.p[k] * w_curr
-                            if direction < 0:  # Umgang mit numerischen Ungenauigkeiten?
+                            if direction < - eps:  # a more restrictive view
                                 self.solution = x
                                 return
                                 #"y": [...,
                                 #    {"p":, "d":},
-                                #    ...]} # Ausgangs-LP ist unbeschränkt
+                                #    ...]} # original problem is unbounded 
                                 #raise Exception("Input Problem is unbounded.")
                             self.__add_constraint_pi(E, e)
                             s = s+1
-                        else: # es ex. k sodass w > 0
+                        else: # it exists k with w > 0
                             self.__add_constraint_sigma(sigma_p.T.dot(self.T[k_p]),
                                                         sigma_p.T.dot(self.h[k_p]))
                             r = r+1
-                    else: #es ex. k mit w' > 0
+                    else: # it exists k with w' > 0
                         self.__add_constraint_sigma(sigma_d.T.dot(self.T[k_d]),
                                                     sigma_d.T.dot(self.h[k_d]))
                         r = r+1
