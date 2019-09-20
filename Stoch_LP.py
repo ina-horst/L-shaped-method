@@ -14,13 +14,12 @@ from pysmps import smps_loader as smps
 from Exceptions import InfeasibleProblem, UnboundedProblem
 from LP import LP
     
-    
 class Stoch_LP(LP):
     
     """
     An instance of Stoch_LP offers the following:
         - Inheritance: inherits from LP and conceived as instance of class LP 
-            this resembles the subordinated problem
+            this resembles the master problem
         - Fields:
             n (numeric): Number of first-stage variables
             c (np.array): Vector of coefficients of the first-stage objective 
@@ -62,7 +61,7 @@ class Stoch_LP(LP):
                       type sigma 
                     d is the rhs value for the added constraint of type sigma
                 - Result:
-                    Adds a constraint of type sigma to the subordinated problem
+                    Adds a constraint of type sigma to the master problem
              __add_constraint_pi:
                  - Arguments: 
                     self 
@@ -70,7 +69,7 @@ class Stoch_LP(LP):
                       type pi
                     e is the rhs value for the added constraint of type pi
                  - Result:
-                    Adds a constraint of type pi to the subordinated problem
+                    Adds a constraint of type pi to the master problem
             __is_second_stage_problem_feasible:
                  - Arguments:
                      self 
@@ -118,8 +117,11 @@ class Stoch_LP(LP):
     
    
     DEBUG = False
+    COUNT_MASTER = {}
+    COUNT_FEASIBLE = {}
+    COUNT_SECOND = {}
     
-    def __init__(self, c, A, b, q, h, T, W, p, eps = 1e-8):
+    def __init__(self, name, c, A, b, q, h, T, W, p, eps = 1e-8):
         self.n = c.size
         super().__init__(c = np.concatenate((
                 c,
@@ -130,6 +132,10 @@ class Stoch_LP(LP):
             ), axis = 1),
             b_eq = b,
             eps = eps)
+        self.name = name
+        Stoch_LP.COUNT_MASTER[name] = []
+        Stoch_LP.COUNT_FEASIBLE[name] = [0,0]
+        Stoch_LP.COUNT_SECOND[name] = [0,0]
         self.K = len(q)
         if len(h) != self.K or len(T) != self.K or len(p) != self.K:
             raise Exception("random variables must have the same number of cases")
@@ -141,7 +147,8 @@ class Stoch_LP(LP):
     
     def from_smps(path, eps = 1e-8):
         d = smps.load_2stage_problem(path)
-        return Stoch_LP(d["c"], d["A"], d["b"], d["q"], d["h"], d["T"], d["W"], d["p"], eps)
+        print(d) 
+        return Stoch_LP(d["name"], d["c"], d["A"], d["b"], d["q"], d["h"], d["T"], d["W"], d["p"], eps)
     
     def __add_constraint_sigma(self, D, d):
         if Stoch_LP.DEBUG:
@@ -202,7 +209,8 @@ class Stoch_LP(LP):
                             self.T[k].dot(x)
                         )),
                     calculate_multipliers = True)
-            lp.solve()
+            Stoch_LP.COUNT_FEASIBLE[self.name][1] = Stoch_LP.COUNT_FEASIBLE[self.name][1] + lp.solve()
+            Stoch_LP.COUNT_FEASIBLE[self.name][0] = Stoch_LP.COUNT_FEASIBLE[self.name][0] + 1 # counts number of simplex iterations for solving subordinate problems
             if lp.optimal_value > self.eps:
                 return lp.multipliers, k
         return None, -1
@@ -214,7 +222,9 @@ class Stoch_LP(LP):
                         self.T[k].dot(x)
                     )), 
                 calculate_multipliers = True)
+        Stoch_LP.COUNT_SECOND[self.name][1] = Stoch_LP.COUNT_SECOND[self.name][1] + lp.solve()
         sol = lp.get_solution()
+        Stoch_LP.COUNT_SECOND[self.name][0] = Stoch_LP.COUNT_SECOND[self.name][0] + 1
         if not sol["bounded"]:
             raise UnboundedProblem()
         return lp.optimal_value, lp.solution, lp.multipliers
@@ -245,7 +255,7 @@ class Stoch_LP(LP):
         while not optimal:
             feasible = False
             while not feasible:
-                super().solve()
+                Stoch_LP.COUNT_MASTER[self.name].append(super().solve())
                 self.solved = True
                 x, theta, bounded = unzip(super().get_solution(), self.c[-1])
                 if Stoch_LP.DEBUG:
@@ -318,6 +328,10 @@ class Stoch_LP(LP):
                 print("Solution:", self.solution)
                 print("Optimal Value:", self.optimal_value)
                 print("Added r =", r, " many constraints of type sigma and s =", s, "many of type pi.")
+                print("The master problem got solved", len(Stoch_LP.COUNT_MASTER[self.name]),"times.")
+                print("List of simplex-iterations for each master problem is", Stoch_LP.COUNT_MASTER[self.name])
+                print(Stoch_LP.COUNT_FEASIBLE[self.name][0]," problems for proving feasibility were solved, for which", Stoch_LP.COUNT_FEASIBLE[self.name][1],"simplex-iterations were needed.")
+                print(Stoch_LP.COUNT_SECOND[self.name][0]," second stage problems were solved, for which", Stoch_LP.COUNT_SECOND[self.name][1],"simplex-iterations were needed.")
             else:
                 self.__add_constraint_pi(E, e)
                 s = s+1

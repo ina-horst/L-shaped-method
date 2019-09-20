@@ -64,7 +64,7 @@ class LP:
             
     """
     
-    DEBUG = True
+    DEBUG = False
     
     def __init__(self, c, A_eq = None, b_eq = None,
                  A_geq = None, b_geq = None, calculate_multipliers = False, eps
@@ -97,6 +97,7 @@ class LP:
         return {"x": self.solution, "bounded": not type(self.solution) is dict}
     
     def solve(self):
+        iterations = 0
         # local function
         def base_vector(i, dim):
             v = np.zeros(dim)
@@ -265,14 +266,15 @@ class LP:
             phase (numeric): phase 1 or 2
         '''
         
-        def phase(B, N, A, c_curr, tableau, n, m, rows, a, phase):
+        def phase(B, N, A, c_curr, tableau, n, m, rows, a, phase, iterations):
             if LP.DEBUG:
                 print("Entering phase", phase, "with parameters:\n",
                       {"n": n, "m": m, "rows": rows, "a": a})
             bland = False
             degenerated = 0
             # while there is a negative coefficient in c_curr    
-            while np.shape(c_curr[:,N][c_curr[:,N] < - self.eps])[1] > 0: 
+            while np.shape(c_curr[:,N][c_curr[:,N] < - self.eps])[1] > 0:
+                iterations = iterations + 1
                 z = tableau[rows + 2 - phase, n + m + a] # for checking cycle
                 if LP.DEBUG:
                     print("Initial Tableau:")
@@ -325,11 +327,11 @@ class LP:
             if LP.DEBUG:
                 print("Finished Tableau:")
                 print(tableau)
-            return B, N, tableau
+            return B, N, tableau, iterations
         #Phase 1
         try:
-            B, N, tableau = phase(B, N, A, c_curr, tableau,
-                                  n, m, rows=m, a = a, phase = 1)
+            B, N, tableau, iterations = phase(B, N, A, c_curr, tableau,
+                                  n, m, rows=m, a = a, phase = 1, iterations = iterations)
         except (NoPivotException) as e:
             raise Exception("No Pivot could been found. Break...")
         if tableau[m + 1, n + m + a] < - self.eps:
@@ -342,12 +344,15 @@ class LP:
         AnB = [i for i in A if i in B]
         
         if len(AnB) == 1:
-            print("There is one artificial variable in the basis variables.")
-            print(B, N, A)
+            if LP.DEBUG:
+                print("There is one artificial variable in the basis variables.")
+                print(B, N, A)
             index = B.index(AnB[0])
-            print(index)
+            if LP.DEBUG:
+                print(index)
             if tableau[index,-1] < self.eps:
-                print(tableau[index,:])
+                if LP.DEBUG:
+                    print(tableau[index,:])
                 row = np.ravel(np.asarray(tableau[index,0:-1]))
                 if np.nonzero(row[N])[0].size > 0:
                     j = np.nonzero(row[N])[0][0]
@@ -362,8 +367,9 @@ class LP:
                     raise Exception("The constraints are linearly dependent. No base could be chosen.")
             else:
                 raise Exception("Phase 1 exited without a feasible solution! Exiting.")
-            print(B, N)
-            print(tableau)
+            if LP.DEBUG:
+                print(B, N)
+                print(tableau)
         elif len(AnB) > 1:
             raise Exception("There are multiple artificial variables in the basis variables.")
            
@@ -376,7 +382,7 @@ class LP:
         if LP.DEBUG:
             print("BASIS AFTER PHASE 1:", B)
         try:
-            B, N, tableau = phase(B,
+            B, N, tableau, iterations = phase(B,
                   [i for i in range(0,n+m_2) if i not in B],
                   [],
                   tableau[m, 0:(n+m_2)],
@@ -385,7 +391,8 @@ class LP:
                   m = m_2,
                   rows=m,
                   a = 0,
-                  phase = 2)
+                  phase = 2,
+                  iterations = iterations)
         except (NoPivotException) as e:
             x_p = np.zeros((len(e.B) + len(e.N), 1))
             x_d = np.zeros((len(e.B) + len(e.N), 1))
@@ -408,4 +415,5 @@ class LP:
             print("FINISHED!")
             print("Solution:", self.solution.T)
             print("Optimal Value:", self.optimal_value)
+        return iterations
             
