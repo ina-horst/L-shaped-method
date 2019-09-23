@@ -21,6 +21,7 @@ class Stoch_LP(LP):
         - Inheritance: inherits from LP and conceived as instance of class LP 
             this resembles the master problem
         - Fields:
+            name (string): Name of the problem (from smps; only used for counting iterations in a static dict)
             n (numeric): Number of first-stage variables
             c (np.array): Vector of coefficients of the first-stage objective 
                 function corresponding to the first-stage variables 
